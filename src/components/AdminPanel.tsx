@@ -3,6 +3,7 @@ import {
   Bot,
   CheckCircle2,
   Clock,
+  ExternalLink,
   Loader2,
   MailPlus,
   ShieldCheck,
@@ -11,6 +12,7 @@ import {
   UserCheck,
   UserX,
 } from 'lucide-react';
+import firebaseConfig from '../../firebase-applet-config.json';
 import {
   adminDeleteAllowedEmail,
   adminSetEmailStatus,
@@ -264,6 +266,23 @@ export function AdminPanel({
           </button>
         </form>
         {formError && <p className="mt-2 text-xs font-medium text-red-600">{formError}</p>}
+
+        <div className="mt-4 flex flex-col gap-2.5 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs leading-relaxed text-slate-500">
+            {copyText.adminOAuthNotice}
+          </p>
+          <a
+            href={`https://console.cloud.google.com/auth/audience?project=${encodeURIComponent(
+              firebaseConfig.projectId || ''
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition-colors hover:border-blue-600 hover:text-blue-600 whitespace-nowrap shrink-0"
+          >
+            <span>{copyText.adminOpenTestUsersBtn}</span>
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </div>
       </div>
 
       {/* Shared Telegram Bot for Approved Emails */}

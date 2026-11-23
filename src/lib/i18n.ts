@@ -139,6 +139,15 @@ export const copy = {
     adminConfirmRevokeBody: '"{email}" ၏ အသုံးပြုခွင့်ကို ပိတ်သိမ်းပါမည်။ Telegram sync နှင့် Drive upload လုပ်ဆောင်ခွင့် ရပ်တန့်သွားပါမည်။',
     adminConfirmDeleteTitle: 'Allowlist မှ Mail ကို ဖယ်ရှားမည်လား',
     adminConfirmDeleteBody: '"{email}" ကို ခွင့်ပြုစာရင်းမှ ဖယ်ရှားပါမည်။',
+    tgIndicatorActive: 'Telegram ချိတ်ဆက်မှု အသင့်ဖြစ်နေသည်',
+    tgIndicatorIdle: 'Telegram Bot မချိတ်ဆက်ရသေးပါ (Idle)',
+    tgIndicatorError: 'Telegram ချိတ်ဆက်မှု အမှားရှိနေသည်',
+    driveAccountLabel: 'Drive အကောင့်',
+    switchDriveAccount: 'Drive Account ပြောင်းမည်',
+    switchingDriveAccount: 'ပြောင်းနေသည်...',
+    adminOAuthNotice:
+      'မှတ်ချက် — Google Cloud App သည် Testing mode တွင်ရှိနေပါက Mail အသစ်များ Google Drive ချိတ်သုံးနိုင်ရန် Google Cloud Console → Test users ထဲသို့လည်း ထည့်ပေးရန်လိုအပ်ပါသည်။',
+    adminOpenTestUsersBtn: 'Google Cloud Test Users ဖွင့်မည်',
   },
   en: {
     brand: 'TeleDrive',
@@ -278,6 +287,15 @@ export const copy = {
     adminConfirmRevokeBody: '"{email}" will immediately lose access to sync Telegram PDFs and upload to Drive.',
     adminConfirmDeleteTitle: 'Remove email from allowlist?',
     adminConfirmDeleteBody: '"{email}" will be removed from the pre-approved email allowlist.',
+    tgIndicatorActive: 'Telegram connection active',
+    tgIndicatorIdle: 'Telegram connection idle (no bot connected)',
+    tgIndicatorError: 'Telegram connection error',
+    driveAccountLabel: 'Drive Account',
+    switchDriveAccount: 'Switch Drive Account',
+    switchingDriveAccount: 'Switching...',
+    adminOAuthNotice:
+      'Note: While your Google OAuth consent screen is in Testing mode, add new Gmail addresses to Google Cloud Console → Test users so they can authorize Google Drive without Error 403.',
+    adminOpenTestUsersBtn: 'Open Google Cloud Test Users',
   },
 } as const;
 

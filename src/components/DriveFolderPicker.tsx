@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  ArrowLeftRight,
   Check,
   ChevronRight,
   Folder,
@@ -20,9 +21,12 @@ import { ConfirmModal } from './ConfirmModal';
 interface DriveFolderPickerProps {
   open: boolean;
   accessToken: string | null;
+  driveAccountEmail?: string;
+  switchingDriveAccount?: boolean;
   selectedFolder: DriveFolder | null;
   lang: Language;
   onSelect: (folder: DriveFolder) => void;
+  onSwitchDriveAccount: () => void;
   onAuthExpired: () => void;
   onFolderCreatedLog: (folder: DriveFolder) => void;
   onClose: () => void;
@@ -36,9 +40,12 @@ interface BreadcrumbItem {
 export function DriveFolderPicker({
   open,
   accessToken,
+  driveAccountEmail,
+  switchingDriveAccount = false,
   selectedFolder,
   lang,
   onSelect,
+  onSwitchDriveAccount,
   onAuthExpired,
   onFolderCreatedLog,
   onClose,
@@ -60,6 +67,12 @@ export function DriveFolderPicker({
   useEffect(() => {
     setBreadcrumbs((prev) => [{ id: 'root', name: copyText.myDriveRoot }, ...prev.slice(1)]);
   }, [copyText.myDriveRoot]);
+
+  useEffect(() => {
+    setBreadcrumbs([{ id: 'root', name: copyText.myDriveRoot }]);
+    setSearchQuery('');
+    setError(null);
+  }, [accessToken, driveAccountEmail]);
 
   const loadFolders = async (parentId: string, query: string) => {
     if (!accessToken) return;
@@ -177,7 +190,36 @@ export function DriveFolderPicker({
             </button>
           </div>
 
-          <div className="border-b border-slate-200 px-6 py-3.5">
+          <div className="space-y-3 border-b border-slate-200 px-6 py-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="min-w-0 text-slate-600">
+                <span>{copyText.driveAccountLabel}</span>
+                <span className="mx-1.5 text-slate-300" aria-hidden="true">
+                  ·
+                </span>
+                <span className="font-mono font-semibold text-slate-900">
+                  {driveAccountEmail || 'Google Drive'}
+                </span>
+              </div>
+              <button
+                type="button"
+                disabled={switchingDriveAccount}
+                onClick={onSwitchDriveAccount}
+                className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition-colors hover:border-blue-600 hover:text-blue-600 disabled:opacity-50 whitespace-nowrap shrink-0"
+              >
+                {switchingDriveAccount ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ArrowLeftRight className="h-3.5 w-3.5" />
+                )}
+                <span>
+                  {switchingDriveAccount
+                    ? copyText.switchingDriveAccount
+                    : copyText.switchDriveAccount}
+                </span>
+              </button>
+            </div>
+
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input

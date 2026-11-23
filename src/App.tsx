@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
   AlertCircle,
+  ArrowLeftRight,
   ArrowUpRight,
   Bot,
   Check,
@@ -34,10 +35,13 @@ import {
 import {
   clearAccessToken,
   getAccessToken,
+  getDriveAccount,
   getFirebaseIdToken,
   googleSignIn,
   initAuth,
   logout,
+  switchDriveAccount,
+  type DriveAccountInfo,
 } from './lib/firebase';
 import {
   addRealtimeActivity,
@@ -125,6 +129,9 @@ export default function App() {
   const copyText = t(lang);
 
   const [user, setUser] = useState<User | null>(null);
+  const [driveAccount, setDriveAccount] = useState<DriveAccountInfo | null>(null);
+  const [driveAccessToken, setDriveAccessToken] = useState<string | null>(null);
+  const [switchingDriveAccount, setSwitchingDriveAccount] = useState<boolean>(false);
   const [needsAuth, setNeedsAuth] = useState<boolean>(true);
   const [accessStatus, setAccessStatus] = useState<AccessStatus | 'checking'>('checking');
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
@@ -145,6 +152,7 @@ export default function App() {
   const [inbox, setInbox] = useState<TelegramPdfItem[]>([]);
   const [loadingInbox, setLoadingInbox] = useState<boolean>(false);
   const [syncingTelegram, setSyncingTelegram] = useState<boolean>(false);
+  const [telegramError, setTelegramError] = useState<string | null>(null);
 
   const [inboxFilter, setInboxFilter] = useState<InboxFilter>('all');
   const [chatFilter, setChatFilter] = useState<string>('all');
@@ -255,6 +263,8 @@ export default function App() {
 
   const handleAuthExpired = useCallback(() => {
     clearAccessToken();
+    setDriveAccount(null);
+    setDriveAccessToken(null);
     setNeedsAuth(true);
     setRules((prev) => ({ ...prev, autoSyncEnabled: false }));
     setBannerError(copyText.authNeededWarning);
@@ -266,12 +276,19 @@ export default function App() {
       if (statusRes.ok) {
         const statusData = (await statusRes.json()) as TelegramStatusResponse;
         setTgStatus(statusData);
+        setTelegramError(null);
         if (statusData.bot?.username) {
           botUsernameRef.current = statusData.bot.username;
         }
+      } else {
+        const errData = (await statusRes.json().catch(() => ({}))) as { error?: string };
+        setTelegramError(errData.error || 'Unable to check Telegram bot status.');
       }
     } catch (err) {
       console.error('Failed to load Telegram status:', err);
+      setTelegramError(
+        err instanceof Error ? err.message : 'Unable to reach Telegram status service.'
+      );
     }
   }, [apiFetch]);
 
@@ -298,13 +315,17 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = initAuth(
-      (authedUser) => {
+      (authedUser, token) => {
         setUser(authedUser);
+        setDriveAccessToken(token);
+        setDriveAccount(getDriveAccount());
         setNeedsAuth(false);
         setAccessStatus(isAdminUser(authedUser) ? 'approved' : 'checking');
       },
       (firebaseUser) => {
         setUser(firebaseUser);
+        setDriveAccessToken(null);
+        setDriveAccount(null);
         setNeedsAuth(true);
         setAccessStatus('checking');
       }
@@ -474,6 +495,8 @@ export default function App() {
       const outcome = await googleSignIn();
       if (outcome.status === 'success') {
         setUser(outcome.user);
+        setDriveAccessToken(outcome.accessToken);
+        setDriveAccount(getDriveAccount());
         setNeedsAuth(false);
         setAccessStatus(isAdminUser(outcome.user) ? 'approved' : 'checking');
       } else if (outcome.status === 'cancelled') {
@@ -490,10 +513,53 @@ export default function App() {
     }
   };
 
+  const handleSwitchDriveAccount = async (openPickerAfter = true) => {
+    setSwitchingDriveAccount(true);
+    setBannerError(null);
+    try {
+      const prevEmail = (driveAccount?.email || user?.email || '').trim().toLowerCase();
+      const outcome = await switchDriveAccount();
+      if (outcome.status === 'success') {
+        setDriveAccessToken(outcome.accessToken);
+        setDriveAccount(outcome.driveAccount);
+        const nextEmail = outcome.driveAccount.email.trim().toLowerCase();
+        if (nextEmail && nextEmail !== prevEmail) {
+          setSelectedFolder(null);
+          setFolderPdfs([]);
+          setRules((prev) => ({ ...prev, autoSyncEnabled: false }));
+          await persistSettingsToFirestore({ folder: null });
+        } else {
+          await refreshFolderPdfs();
+        }
+        void addActivity(
+          'folder_create',
+          'Google Drive Account Switched',
+          outcome.driveAccount.email || 'Connected Drive account',
+          'success'
+        );
+        if (openPickerAfter) {
+          setFolderPickerOpen(true);
+        }
+      } else if (outcome.status === 'cancelled') {
+        setBannerError(copyText.signInCancelled);
+      } else if (outcome.status === 'blocked') {
+        setBannerError(copyText.signInBlocked);
+      }
+    } catch (err) {
+      setBannerError(
+        err instanceof Error ? err.message : 'Unable to switch Google Drive account.'
+      );
+    } finally {
+      setSwitchingDriveAccount(false);
+    }
+  };
+
   const handleLogout = async () => {
     setRules((prev) => ({ ...prev, autoSyncEnabled: false }));
     await logout();
     setUser(null);
+    setDriveAccessToken(null);
+    setDriveAccount(null);
     setNeedsAuth(true);
     setAccessStatus('checking');
     setActiveTab('inbox');
@@ -508,12 +574,14 @@ export default function App() {
     setInbox([]);
     setActivities([]);
     setSelectedFolder(null);
+    setTelegramError(null);
   };
 
   const handleSyncTelegram = useCallback(
     async (clearWebhook = false): Promise<TelegramPdfItem[]> => {
       setSyncingTelegram(true);
       setBannerError(null);
+      setTelegramError(null);
       try {
         const res = await apiFetch('/api/telegram/sync', {
           method: 'POST',
@@ -528,8 +596,10 @@ export default function App() {
         };
 
         if (res.status === 409 && data.code === 'WEBHOOK_CONFLICT') {
+          const msg = data.error || 'Webhook conflict detected.';
           setTgStatus((prev) => ({ ...prev, webhookActive: true }));
-          setBannerError(data.error || 'Webhook conflict detected.');
+          setBannerError(msg);
+          setTelegramError(msg);
           return [];
         }
 
@@ -548,6 +618,7 @@ export default function App() {
           lastSyncedAt: data.lastSyncedAt || new Date().toISOString(),
           inboxCount: syncedItems.length,
         }));
+        setTelegramError(null);
 
         if ((data.newCount || 0) > 0) {
           void addActivity(
@@ -561,6 +632,7 @@ export default function App() {
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unable to sync Telegram.';
         setBannerError(message);
+        setTelegramError(message);
         return [];
       } finally {
         setSyncingTelegram(false);
@@ -579,6 +651,7 @@ export default function App() {
       throw new Error(data.error || 'Failed to verify bot token.');
     }
     setTgStatus(data);
+    setTelegramError(null);
     if (data.bot?.username) {
       botUsernameRef.current = data.bot.username;
       await persistSettingsToFirestore({ botUsername: data.bot.username });
@@ -601,6 +674,7 @@ export default function App() {
       lastSyncedAt: null,
       inboxCount: 0,
     });
+    setTelegramError(null);
     botUsernameRef.current = '';
     await persistSettingsToFirestore({ botUsername: '' });
     setRules((prev) => ({ ...prev, autoSyncEnabled: false }));
@@ -617,6 +691,7 @@ export default function App() {
       throw new Error(data.error || 'Failed to verify shared bot token.');
     }
     setTgStatus(data);
+    setTelegramError(null);
     if (data.bot?.username) {
       botUsernameRef.current = data.bot.username;
       await persistSettingsToFirestore({ botUsername: data.bot.username });
@@ -634,6 +709,7 @@ export default function App() {
       method: 'POST',
       body: JSON.stringify({ scope: 'shared' }),
     });
+    setTelegramError(null);
     setRules((prev) => ({ ...prev, autoSyncEnabled: false }));
     await refreshTelegramStatus();
   };
@@ -642,9 +718,12 @@ export default function App() {
     const res = await apiFetch('/api/telegram/clear-webhook', { method: 'POST' });
     const data = (await res.json()) as { ok?: boolean; error?: string };
     if (!res.ok) {
-      throw new Error(data.error || 'Unable to clear webhook.');
+      const msg = data.error || 'Unable to clear webhook.';
+      setTelegramError(msg);
+      throw new Error(msg);
     }
     setTgStatus((prev) => ({ ...prev, webhookActive: false }));
+    setTelegramError(null);
     await handleSyncTelegram(true);
   };
 
@@ -1006,6 +1085,28 @@ export default function App() {
     ...(userIsAdmin ? ([['admin', copyText.navAdmin]] as Array<[ActiveTab, string]>) : []),
   ];
 
+  const tgConnectionState: 'active' | 'idle' | 'error' =
+    telegramError || tgStatus.webhookActive
+      ? 'error'
+      : tgStatus.connected
+        ? 'active'
+        : 'idle';
+
+  const tgConnectionTitle =
+    tgConnectionState === 'error'
+      ? `${copyText.tgIndicatorError}${
+          telegramError
+            ? `: ${telegramError}`
+            : tgStatus.webhookActive
+              ? `: ${copyText.webhookTitle}`
+              : ''
+        }`
+      : tgConnectionState === 'active'
+        ? `${copyText.tgIndicatorActive}${
+            tgStatus.bot?.username ? ` (@${tgStatus.bot.username})` : ''
+          }`
+        : copyText.tgIndicatorIdle;
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       {/* Top Bar Contract: 3 zones, gap-8, single-line controls */}
@@ -1063,12 +1164,45 @@ export default function App() {
             ) : (
               <button
                 type="button"
-                onClick={() => void handleSyncTelegram(false)}
-                disabled={!tgStatus.connected || syncingTelegram}
-                className="inline-flex min-h-[40px] items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 whitespace-nowrap shrink-0"
+                title={tgConnectionTitle}
+                aria-label={`${syncingTelegram ? copyText.syncing : copyText.syncNow} (${tgConnectionTitle})`}
+                onClick={() => {
+                  if (!tgStatus.connected && telegramError) {
+                    void refreshTelegramStatus();
+                    return;
+                  }
+                  void handleSyncTelegram(false);
+                }}
+                disabled={(!tgStatus.connected && !telegramError) || syncingTelegram}
+                className={`inline-flex min-h-[40px] items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 whitespace-nowrap shrink-0 ${
+                  tgConnectionState === 'error'
+                    ? 'bg-red-600 text-white hover:bg-red-700 focus-visible:outline-red-600 disabled:opacity-60'
+                    : tgConnectionState === 'active'
+                      ? 'bg-blue-600 text-white hover:bg-blue-700 focus-visible:outline-blue-600 disabled:opacity-60'
+                      : 'border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed'
+                }`}
               >
+                {tgConnectionState === 'error' ? (
+                  <AlertCircle
+                    className="h-4 w-4 shrink-0 text-white"
+                    aria-hidden="true"
+                  />
+                ) : tgConnectionState === 'active' ? (
+                  <span
+                    className="relative flex h-2.5 w-2.5 shrink-0"
+                    aria-hidden="true"
+                  >
+                    <span className="absolute inline-flex h-full w-full motion-safe:animate-ping rounded-full bg-emerald-300 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 ring-1 ring-white/80" />
+                  </span>
+                ) : (
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full bg-slate-400 ring-1 ring-slate-300"
+                    aria-hidden="true"
+                  />
+                )}
                 <RefreshCw
-                  className={`h-4 w-4 ${syncingTelegram ? 'animate-spin' : ''}`}
+                  className={`h-4 w-4 shrink-0 ${syncingTelegram ? 'animate-spin' : ''}`}
                 />
                 <span>{syncingTelegram ? copyText.syncing : copyText.syncNow}</span>
               </button>
@@ -1293,8 +1427,14 @@ export default function App() {
                   <FolderOpen className="h-4 w-4 text-slate-400" />
                 </div>
 
+                {(driveAccount?.email || user?.email) && (
+                  <p className="mt-2 truncate font-mono text-xs text-slate-500">
+                    {driveAccount?.email || user?.email}
+                  </p>
+                )}
+
                 {selectedFolder ? (
-                  <div className="mt-3">
+                  <div className="mt-2.5">
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                       <Folder className="h-4 w-4 shrink-0 text-blue-600" />
                       <span className="truncate">{selectedFolder.name}</span>
@@ -1304,18 +1444,37 @@ export default function App() {
                     </p>
                   </div>
                 ) : (
-                  <p className="mt-3 text-sm text-amber-700">
+                  <p className="mt-2.5 text-sm text-amber-700">
                     {copyText.noFolderSelected}
                   </p>
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => setFolderPickerOpen(true)}
-                  className="mt-4 inline-flex min-h-[40px] w-full items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-800 transition-colors hover:border-blue-600 hover:bg-white hover:text-blue-600 whitespace-nowrap"
-                >
-                  {selectedFolder ? copyText.changeFolder : copyText.selectFolderBtn}
-                </button>
+                <div className="mt-4 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setFolderPickerOpen(true)}
+                    className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-800 transition-colors hover:border-blue-600 hover:bg-white hover:text-blue-600 whitespace-nowrap"
+                  >
+                    {selectedFolder ? copyText.changeFolder : copyText.selectFolderBtn}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={switchingDriveAccount}
+                    onClick={() => void handleSwitchDriveAccount(true)}
+                    className="inline-flex min-h-[38px] w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-blue-600 hover:text-blue-600 disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {switchingDriveAccount ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <ArrowLeftRight className="h-3.5 w-3.5" />
+                    )}
+                    <span>
+                      {switchingDriveAccount
+                        ? copyText.switchingDriveAccount
+                        : copyText.switchDriveAccount}
+                    </span>
+                  </button>
+                </div>
               </div>
 
               {/* Connection & Realtime DB Summary */}
@@ -1708,12 +1867,39 @@ export default function App() {
                         {copyText.folderViewTitle}
                       </h2>
                       <p className="mt-1 text-xs text-slate-500">
+                        {(driveAccount?.email || user?.email) && (
+                          <>
+                            <span className="font-mono text-slate-700">
+                              {driveAccount?.email || user?.email}
+                            </span>
+                            <span className="mx-1.5 text-slate-300" aria-hidden="true">
+                              ·
+                            </span>
+                          </>
+                        )}
                         {selectedFolder
                           ? `${selectedFolder.name} · ${folderPdfs.length} PDF`
                           : copyText.noFolderSelected}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={switchingDriveAccount}
+                        onClick={() => void handleSwitchDriveAccount(true)}
+                        className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:border-blue-600 hover:text-blue-600 disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {switchingDriveAccount ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <ArrowLeftRight className="h-3.5 w-3.5" />
+                        )}
+                        <span>
+                          {switchingDriveAccount
+                            ? copyText.switchingDriveAccount
+                            : copyText.switchDriveAccount}
+                        </span>
+                      </button>
                       {selectedFolder?.webViewLink && (
                         <a
                           href={selectedFolder.webViewLink}
@@ -1960,7 +2146,9 @@ export default function App() {
 
       <DriveFolderPicker
         open={folderPickerOpen}
-        accessToken={getAccessToken()}
+        accessToken={driveAccessToken || getAccessToken()}
+        driveAccountEmail={driveAccount?.email || user?.email || ''}
+        switchingDriveAccount={switchingDriveAccount}
         selectedFolder={selectedFolder}
         lang={lang}
         onSelect={(folder) => {
@@ -1968,6 +2156,7 @@ export default function App() {
           setBannerError(null);
           void persistSettingsToFirestore({ folder });
         }}
+        onSwitchDriveAccount={() => void handleSwitchDriveAccount(false)}
         onAuthExpired={handleAuthExpired}
         onFolderCreatedLog={(folder) =>
           void addActivity(
