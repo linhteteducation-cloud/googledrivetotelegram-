@@ -530,7 +530,7 @@ async function startServer() {
 
       const updatesRes = await telegramApiCall<TelegramRawUpdate[]>(session.token, 'getUpdates', {
         offset: session.offset,
-        limit: 100,
+        limit: 200,
         timeout: 0,
         allowed_updates: JSON.stringify([
           'message',
@@ -583,7 +583,7 @@ async function startServer() {
 
       const merged = Array.from(existingByKey.values())
         .sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime())
-        .slice(0, 500);
+        .slice(0, 3000);
 
       session.inbox = merged;
       session.chats = new Map();

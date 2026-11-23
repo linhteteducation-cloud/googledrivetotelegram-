@@ -319,7 +319,7 @@ export function subscribeAllAllowedEmails(
 ): () => void {
   const path = 'allowedEmails';
   return onSnapshot(
-    query(collection(db, 'allowedEmails'), limit(250)),
+    query(collection(db, 'allowedEmails'), limit(2000)),
     (snapshot) => {
       const list: AllowedEmailEntry[] = snapshot.docs.map((d) => {
         const data = d.data();
@@ -354,7 +354,7 @@ export function subscribeAllUserAccess(
 ): () => void {
   const path = 'userAccess';
   return onSnapshot(
-    query(collection(db, 'userAccess'), limit(250)),
+    query(collection(db, 'userAccess'), limit(2000)),
     (snapshot) => {
       const list: UserAccessEntry[] = snapshot.docs.map((d) => {
         const data = d.data();
@@ -554,7 +554,7 @@ export function subscribePdfRecords(
   const q = query(
     collection(db, 'users', uid, 'pdfs'),
     where('ownerId', '==', uid),
-    limit(250)
+    limit(2000)
   );
 
   return onSnapshot(

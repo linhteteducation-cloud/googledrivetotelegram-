@@ -1,5 +1,6 @@
 import { getApps, initializeApp } from 'firebase/app';
 import {
+  browserLocalPersistence,
   getAuth,
   GoogleAuthProvider,
   inMemoryPersistence,
@@ -15,6 +16,11 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
+// Guarantee browser local persistence so user session persists across page reloads and browser restarts
+void setPersistence(auth, browserLocalPersistence).catch((err) => {
+  console.warn('Failed to set local persistence:', err);
+});
+
 async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
@@ -28,13 +34,26 @@ void testConnection();
 
 export const SCOPES = ['https://www.googleapis.com/auth/drive'];
 
-const provider = new GoogleAuthProvider();
-for (const scope of SCOPES) {
-  provider.addScope(scope);
-}
-provider.setCustomParameters({
-  prompt: 'select_account',
-});
+export const createGoogleProvider = (options?: {
+  forceSelectAccount?: boolean;
+  loginHint?: string;
+}) => {
+  const p = new GoogleAuthProvider();
+  for (const scope of SCOPES) {
+    p.addScope(scope);
+  }
+  const customParams: Record<string, string> = {};
+  if (options?.forceSelectAccount) {
+    customParams.prompt = 'select_account';
+  }
+  if (options?.loginHint) {
+    customParams.login_hint = options.loginHint;
+  }
+  if (Object.keys(customParams).length > 0) {
+    p.setCustomParameters(customParams);
+  }
+  return p;
+};
 
 export interface DriveAccountInfo {
   email: string;
@@ -53,22 +72,16 @@ function getDriveOAuthAuth() {
 }
 
 export const initAuth = (
-  onAuthSuccess?: (user: User, token: string) => void,
-  onAuthFailure?: (user: User | null) => void
+  onAuthSuccess?: (user: User, token: string | null) => void,
+  onSignedOut?: () => void
 ) => {
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user) {
-      if (cachedAccessToken) {
-        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-      } else if (!isSigningIn) {
-        cachedAccessToken = null;
-        cachedDriveAccount = null;
-        if (onAuthFailure) onAuthFailure(user);
-      }
+      if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
     } else {
       cachedAccessToken = null;
       cachedDriveAccount = null;
-      if (onAuthFailure) onAuthFailure(null);
+      if (onSignedOut) onSignedOut();
     }
   });
 };
@@ -78,12 +91,24 @@ export type GoogleSignInOutcome =
   | { status: 'cancelled' }
   | { status: 'blocked' };
 
-export const googleSignIn = async (): Promise<GoogleSignInOutcome> => {
+export const googleSignIn = async (
+  loginHint?: string,
+  forceSelectAccount = false
+): Promise<GoogleSignInOutcome> => {
   if (isSigningIn) {
     return { status: 'cancelled' };
   }
   try {
     isSigningIn = true;
+    const effectiveHint =
+      loginHint ||
+      auth.currentUser?.email ||
+      cachedDriveAccount?.email ||
+      'linhteteducation@gmail.com';
+    const provider = createGoogleProvider({
+      loginHint: effectiveHint,
+      forceSelectAccount,
+    });
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
@@ -91,7 +116,7 @@ export const googleSignIn = async (): Promise<GoogleSignInOutcome> => {
     }
     cachedAccessToken = credential.accessToken;
     cachedDriveAccount = {
-      email: result.user.email || '',
+      email: result.user.email || effectiveHint,
       displayName: result.user.displayName || '',
     };
     return { status: 'success', user: result.user, accessToken: cachedAccessToken };
@@ -128,6 +153,7 @@ export const switchDriveAccount = async (): Promise<SwitchDriveOutcome> => {
     isSwitchingDrive = true;
     const driveAuth = getDriveOAuthAuth();
     await setPersistence(driveAuth, inMemoryPersistence);
+    const provider = createGoogleProvider({ forceSelectAccount: true });
     const result = await signInWithPopup(driveAuth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {

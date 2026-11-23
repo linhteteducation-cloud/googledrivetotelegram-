@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Folder,
   FolderPlus,
+  HardDriveUpload,
   Loader2,
   Search,
   X,
@@ -28,6 +29,7 @@ interface DriveFolderPickerProps {
   onSelect: (folder: DriveFolder) => void;
   onSwitchDriveAccount: () => void;
   onAuthExpired: () => void;
+  onConnectDrive?: () => void;
   onFolderCreatedLog: (folder: DriveFolder) => void;
   onClose: () => void;
 }
@@ -47,6 +49,7 @@ export function DriveFolderPicker({
   onSelect,
   onSwitchDriveAccount,
   onAuthExpired,
+  onConnectDrive,
   onFolderCreatedLog,
   onClose,
 }: DriveFolderPickerProps) {
@@ -233,13 +236,30 @@ export function DriveFolderPicker({
           </div>
 
           <div className="min-h-[260px] flex-1 overflow-y-auto px-6 py-3">
-            {error && (
+            {!accessToken ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Folder className="h-8 w-8 text-slate-300" />
+                <p className="mt-2 text-sm font-medium text-slate-700">
+                  {lang === 'my'
+                    ? 'Google Drive ဖိုင်တွဲများ ကြည့်ရှုရန် Drive ချိတ်ဆက်မှု လိုအပ်ပါသည်'
+                    : 'Google Drive authorization required to view folders.'}
+                </p>
+                {onConnectDrive && (
+                  <button
+                    type="button"
+                    onClick={onConnectDrive}
+                    className="mt-4 inline-flex min-h-[38px] items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700"
+                  >
+                    <HardDriveUpload className="h-3.5 w-3.5" />
+                    <span>{copyText.reconnectDrive}</span>
+                  </button>
+                )}
+              </div>
+            ) : error ? (
               <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
                 {error}
               </div>
-            )}
-
-            {loading ? (
+            ) : loading ? (
               <div className="space-y-2 py-2">
                 {[0, 1, 2, 3, 4].map((row) => (
                   <div

@@ -261,14 +261,39 @@ export default function App() {
     return fetch(url, { ...init, headers });
   }, []);
 
+  const ensureDriveToken = useCallback(async (): Promise<string | null> => {
+    const existing = getAccessToken() || driveAccessToken;
+    if (existing) return existing;
+
+    const emailHint = driveAccount?.email || user?.email || 'linhteteducation@gmail.com';
+    try {
+      const outcome = await googleSignIn(emailHint, false);
+      if (outcome.status === 'success') {
+        setUser(outcome.user);
+        setDriveAccessToken(outcome.accessToken);
+        setDriveAccount({
+          email: outcome.user.email || emailHint,
+          displayName: outcome.user.displayName || '',
+        });
+        setBannerError(null);
+        return outcome.accessToken;
+      }
+    } catch (err) {
+      console.error('Failed to acquire Google Drive token:', err);
+    }
+    return null;
+  }, [driveAccessToken, driveAccount, user]);
+
   const handleAuthExpired = useCallback(() => {
     clearAccessToken();
-    setDriveAccount(null);
     setDriveAccessToken(null);
-    setNeedsAuth(true);
     setRules((prev) => ({ ...prev, autoSyncEnabled: false }));
-    setBannerError(copyText.authNeededWarning);
-  }, [copyText.authNeededWarning]);
+    setBannerError(
+      lang === 'my'
+        ? 'Google Drive သက်တမ်းကုန်သွားပါပြီ။ PDF များ Drive ထဲသိမ်းရန် "Google Drive ချိတ်ဆက်မည်" ကို နှိပ်ပေးပါ။'
+        : 'Google Drive authorization expired. Click "Connect Google Drive" to re-authorize.'
+    );
+  }, [lang]);
 
   const refreshTelegramStatus = useCallback(async () => {
     try {
@@ -293,7 +318,7 @@ export default function App() {
   }, [apiFetch]);
 
   const refreshFolderPdfs = useCallback(async () => {
-    const token = getAccessToken();
+    const token = getAccessToken() || driveAccessToken;
     if (!token || !selectedFolder) {
       setFolderPdfs([]);
       return;
@@ -311,19 +336,21 @@ export default function App() {
     } finally {
       setLoadingFolderPdfs(false);
     }
-  }, [selectedFolder, handleAuthExpired]);
+  }, [selectedFolder, driveAccessToken, handleAuthExpired]);
 
   useEffect(() => {
     const unsubscribe = initAuth(
       (authedUser, token) => {
         setUser(authedUser);
         setDriveAccessToken(token);
-        setDriveAccount(getDriveAccount());
+        if (authedUser.email) {
+          setDriveAccount((prev) => prev || { email: authedUser.email!, displayName: authedUser.displayName || '' });
+        }
         setNeedsAuth(false);
         setAccessStatus(isAdminUser(authedUser) ? 'approved' : 'checking');
       },
-      (firebaseUser) => {
-        setUser(firebaseUser);
+      () => {
+        setUser(null);
         setDriveAccessToken(null);
         setDriveAccount(null);
         setNeedsAuth(true);
@@ -546,9 +573,23 @@ export default function App() {
         setBannerError(copyText.signInBlocked);
       }
     } catch (err) {
-      setBannerError(
-        err instanceof Error ? err.message : 'Unable to switch Google Drive account.'
-      );
+      const msg = err instanceof Error ? err.message : String(err);
+      if (
+        msg.includes('403') ||
+        msg.includes('access_denied') ||
+        msg.includes('verification') ||
+        msg.includes('not completed')
+      ) {
+        setBannerError(
+          lang === 'my'
+            ? 'ဤ Google အကောင့်သည် Developer Test Users စာရင်းတွင် မပါရှိသေးပါ (Error 403)။ မူလခွင့်ပြုချက်ရရှိထားသော ပင်မအကောင့် (linhteteducation@gmail.com) ဖြင့်သာ အသုံးပြုနိုင်ပါသည်။'
+            : 'This Google account is not approved in developer test users (Error 403). Please use the authorized primary account (linhteteducation@gmail.com).'
+        );
+      } else {
+        setBannerError(
+          err instanceof Error ? err.message : 'Unable to switch Google Drive account.'
+        );
+      }
     } finally {
       setSwitchingDriveAccount(false);
     }
@@ -729,9 +770,12 @@ export default function App() {
 
   const uploadSinglePdfToDrive = useCallback(
     async (item: TelegramPdfItem): Promise<boolean> => {
-      const token = getAccessToken();
+      let token = getAccessToken() || driveAccessToken;
       if (!token) {
-        handleAuthExpired();
+        token = await ensureDriveToken();
+      }
+      if (!token) {
+        setBannerError(copyText.authNeededWarning);
         return false;
       }
       if (!selectedFolder) {
@@ -814,8 +858,11 @@ export default function App() {
       selectedFolder,
       rules.namingRule,
       rules.skipDuplicates,
+      driveAccessToken,
+      ensureDriveToken,
       handleAuthExpired,
       copyText.selectFolderFirstWarning,
+      copyText.authNeededWarning,
       addActivity,
     ]
   );
@@ -922,10 +969,19 @@ export default function App() {
     }
     if (itemsToUpload.length === 0) return;
 
+    let token = getAccessToken() || driveAccessToken;
+    if (!token) {
+      token = await ensureDriveToken();
+    }
+    if (!token) {
+      setBannerError(copyText.authNeededWarning);
+      return;
+    }
+
     setBatchUploading(true);
     for (const item of itemsToUpload) {
       const ok = await uploadSinglePdfToDrive(item);
-      if (!ok && !getAccessToken()) break;
+      if (!ok && !(getAccessToken() || driveAccessToken)) break;
     }
     setBatchUploading(false);
     setSelectedKeys(new Set());
@@ -933,7 +989,10 @@ export default function App() {
   };
 
   const handleConfirmDeleteDriveFile = async () => {
-    const token = getAccessToken();
+    let token = getAccessToken() || driveAccessToken;
+    if (!token) {
+      token = await ensureDriveToken();
+    }
     if (!token || !pendingDeleteFile) return;
     setDeletingFile(true);
     try {
@@ -1450,9 +1509,31 @@ export default function App() {
                 )}
 
                 <div className="mt-4 space-y-2">
+                  {!(driveAccessToken || getAccessToken()) && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void ensureDriveToken().then((tok) => {
+                          if (tok) void refreshFolderPdfs();
+                        })
+                      }
+                      className="inline-flex min-h-[38px] w-full items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100 whitespace-nowrap"
+                    >
+                      <HardDriveUpload className="h-3.5 w-3.5" />
+                      <span>{copyText.reconnectDrive}</span>
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => setFolderPickerOpen(true)}
+                    onClick={() => {
+                      if (!(driveAccessToken || getAccessToken())) {
+                        void ensureDriveToken().then((tok) => {
+                          if (tok) setFolderPickerOpen(true);
+                        });
+                      } else {
+                        setFolderPickerOpen(true);
+                      }
+                    }}
                     className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-800 transition-colors hover:border-blue-600 hover:bg-white hover:text-blue-600 whitespace-nowrap"
                   >
                     {selectedFolder ? copyText.changeFolder : copyText.selectFolderBtn}
@@ -2158,6 +2239,11 @@ export default function App() {
         }}
         onSwitchDriveAccount={() => void handleSwitchDriveAccount(false)}
         onAuthExpired={handleAuthExpired}
+        onConnectDrive={() =>
+          void ensureDriveToken().then((tok) => {
+            if (tok) void refreshFolderPdfs();
+          })
+        }
         onFolderCreatedLog={(folder) =>
           void addActivity(
             'folder_create',
@@ -2223,6 +2309,16 @@ export default function App() {
         }}
         onCancel={() => setPendingAutoSyncConfirm(false)}
       />
+
+      <footer className="mt-12 border-t border-slate-200 bg-white py-6">
+        <div className="mx-auto max-w-[1400px] px-6 text-center text-xs leading-relaxed text-slate-500">
+          <p>
+            {lang === 'my'
+              ? 'ဤ အခမဲ့ အွန်လိုင်း အစ္စလာမ့်စာကြည့်တိုက်တွင် ကုရ်အာန်ကျမ်းတော်မြတ်နှင့်ကိုယ်တော်မြတ် (ဆွ) ၏ မွန်မြတ်လှသော ဟဒီးစ်တော်များ၊ အစ္စလာမ့်ယုံကြည်ချက်အကီဒဟ်များ၊ သမိုင်းဖတ်စာများ၊ အစ္စလာမ်ရှရီအသ်ဥပဒေများ၊ ဒိုအာနှင့် အအ်မာလ်များ၊ ကိုယ်ကျင့်သီလနှင့်  ကောင်ရာညွန်းကြားခြင်းများဆိုင်ရာ PDF စာအုပ်များနှင့် သုတေသနစာတမ်းများကို စုံလင်စွာ ဖတ်ရှုဒေါင်းလုဒ်ရယူနိုင်ပါသည်။'
+              : 'In this free online Islamic library, you can read and download comprehensive PDF books and research papers covering the Holy Quran, the noble Hadiths of Prophet Muhammad (PBUH), Islamic creed (Aqeedah), history, Sharia law, Duas, Amaal, ethics, and moral guidance.'}
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }
