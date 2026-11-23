@@ -1,0 +1,420 @@
+{
+  "entities": {
+    "UserWorkspaceSettings": {
+      "title": "UserWorkspaceSettings",
+      "description": "Real-time persisted workspace preferences and selected Google Drive target folder for a user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase UID of the workspace owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "targetFolderId": {
+          "type": "string",
+          "description": "Selected Google Drive folder ID, or empty string if unset.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]*$"
+        },
+        "targetFolderName": {
+          "type": "string",
+          "description": "Display name of the selected Google Drive folder.",
+          "maxLength": 255
+        },
+        "targetFolderWebLink": {
+          "type": "string",
+          "description": "Optional Google Drive webViewLink URL for the target folder.",
+          "maxLength": 512
+        },
+        "namingRule": {
+          "type": "string",
+          "description": "Filename formatting rule applied when saving PDFs to Drive.",
+          "enum": ["original", "date_prefix", "chat_prefix"]
+        },
+        "skipDuplicates": {
+          "type": "boolean",
+          "description": "Whether to skip uploading PDFs already present in the target Drive folder."
+        },
+        "language": {
+          "type": "string",
+          "description": "Preferred UI language code.",
+          "enum": ["my", "en"]
+        },
+        "botUsername": {
+          "type": "string",
+          "description": "Connected Telegram bot public username without @.",
+          "maxLength": 100
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when workspace settings were created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when workspace settings were last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "targetFolderId",
+        "targetFolderName",
+        "targetFolderWebLink",
+        "namingRule",
+        "skipDuplicates",
+        "language",
+        "botUsername",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TelegramPdfRecord": {
+      "title": "TelegramPdfRecord",
+      "description": "Real-time record of a PDF document captured from Telegram and its Google Drive sync state.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase UID of the user who owns this PDF record.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "pdfKey": {
+          "type": "string",
+          "description": "Deterministic document key derived from chatId, messageId, and fileUniqueId.",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "updateId": {
+          "type": "number",
+          "description": "Telegram update_id."
+        },
+        "messageId": {
+          "type": "number",
+          "description": "Telegram message_id."
+        },
+        "chatId": {
+          "type": "number",
+          "description": "Telegram chat ID."
+        },
+        "chatTitle": {
+          "type": "string",
+          "description": "Title of the Telegram chat, group, or channel.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "chatType": {
+          "type": "string",
+          "description": "Telegram chat type.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "senderName": {
+          "type": "string",
+          "description": "Display name or handle of the Telegram sender.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "fileId": {
+          "type": "string",
+          "description": "Telegram file_id used for fetching the file.",
+          "minLength": 5,
+          "maxLength": 256,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "fileUniqueId": {
+          "type": "string",
+          "description": "Stable Telegram file_unique_id for duplicate detection.",
+          "minLength": 3,
+          "maxLength": 256,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "fileName": {
+          "type": "string",
+          "description": "Sanitized PDF filename.",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "fileSize": {
+          "type": "number",
+          "description": "File size in bytes."
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "MIME type of the document.",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "caption": {
+          "type": "string",
+          "description": "Optional Telegram message caption.",
+          "maxLength": 1000
+        },
+        "postedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp when the PDF was posted on Telegram.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "status": {
+          "type": "string",
+          "description": "Current Google Drive sync state.",
+          "enum": ["pending", "saved"]
+        },
+        "driveFileId": {
+          "type": "string",
+          "description": "Google Drive file ID once uploaded, or empty string.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]*$"
+        },
+        "driveWebViewLink": {
+          "type": "string",
+          "description": "Google Drive webViewLink URL once uploaded, or empty string.",
+          "maxLength": 512
+        },
+        "uploadedFolderId": {
+          "type": "string",
+          "description": "Google Drive folder ID where the file was saved, or empty string.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]*$"
+        },
+        "uploadedFolderName": {
+          "type": "string",
+          "description": "Display name of the Google Drive folder where the file was saved.",
+          "maxLength": 255
+        },
+        "uploadedAt": {
+          "type": "string",
+          "description": "ISO timestamp when saved to Google Drive, or empty string.",
+          "maxLength": 40
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when record was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when record was last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "pdfKey",
+        "updateId",
+        "messageId",
+        "chatId",
+        "chatTitle",
+        "chatType",
+        "senderName",
+        "fileId",
+        "fileUniqueId",
+        "fileName",
+        "fileSize",
+        "mimeType",
+        "caption",
+        "postedAt",
+        "status",
+        "driveFileId",
+        "driveWebViewLink",
+        "uploadedFolderId",
+        "uploadedFolderName",
+        "uploadedAt",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ActivityLogEntry": {
+      "title": "ActivityLogEntry",
+      "description": "Immutable real-time audit log item for sync, upload, download, and folder actions.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase UID of the user who performed the action.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "action": {
+          "type": "string",
+          "description": "Type of operation recorded.",
+          "enum": ["sync", "upload", "download", "folder_create", "folder_delete", "error"]
+        },
+        "title": {
+          "type": "string",
+          "description": "Short summary title for the activity entry.",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "detail": {
+          "type": "string",
+          "description": "Detailed description of the outcome.",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "status": {
+          "type": "string",
+          "description": "Outcome severity.",
+          "enum": ["success", "warning", "error"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the activity occurred."
+        }
+      },
+      "required": [
+        "ownerId",
+        "action",
+        "title",
+        "detail",
+        "status",
+        "createdAt"
+      ]
+    },
+    "AllowedEmailEntry": {
+      "title": "AllowedEmailEntry",
+      "description": "Admin-managed allowlist of Google email addresses permitted to access the application.",
+      "type": "object",
+      "properties": {
+        "emailHash": {
+          "type": "string",
+          "description": "Lowercase SHA-256 hex digest of the normalized email address.",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "email": {
+          "type": "string",
+          "description": "Normalized lowercase Google email address.",
+          "minLength": 5,
+          "maxLength": 254,
+          "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+        },
+        "status": {
+          "type": "string",
+          "description": "Approval state of this email address.",
+          "enum": ["approved", "revoked"]
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional admin note for this user.",
+          "maxLength": 200
+        },
+        "addedByUid": {
+          "type": "string",
+          "description": "Firebase UID of the admin who created or updated this rule.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when email entry was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when email entry was last updated."
+        }
+      },
+      "required": [
+        "emailHash",
+        "email",
+        "status",
+        "note",
+        "addedByUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserAccessEntry": {
+      "title": "UserAccessEntry",
+      "description": "Tracks signed-in users requesting or holding access approval from the Admin Panel.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase UID of the signed-in user.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "description": "Normalized lowercase email address of the user.",
+          "minLength": 5,
+          "maxLength": 254,
+          "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+        },
+        "emailHash": {
+          "type": "string",
+          "description": "Lowercase SHA-256 hex digest of the user's email address.",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name from Google sign-in.",
+          "maxLength": 120
+        },
+        "status": {
+          "type": "string",
+          "description": "Access approval status.",
+          "enum": ["pending", "approved", "revoked"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when access record was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when access record was last updated."
+        }
+      },
+      "required": [
+        "uid",
+        "email",
+        "emailHash",
+        "displayName",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/UserWorkspaceSettings" },
+      "description": "Stores real-time user workspace configuration (settingId = 'workspace')."
+    },
+    "/users/{userId}/pdfs/{pdfKey}": {
+      "schema": { "$ref": "#/entities/TelegramPdfRecord" },
+      "description": "Stores real-time captured Telegram PDFs and Google Drive sync state per user."
+    },
+    "/users/{userId}/activities/{activityId}": {
+      "schema": { "$ref": "#/entities/ActivityLogEntry" },
+      "description": "Stores real-time transfer activity logs per user."
+    },
+    "/allowedEmails/{emailHash}": {
+      "schema": { "$ref": "#/entities/AllowedEmailEntry" },
+      "description": "Admin-managed email allowlist for pre-approving or revoking user emails."
+    },
+    "/userAccess/{userId}": {
+      "schema": { "$ref": "#/entities/UserAccessEntry" },
+      "description": "Per-user access status and pending approval requests visible to the Admin Panel."
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "TeleDrive PDF Sync",
+  "description": "Download PDF files posted on Telegram and save them directly into a dedicated Google Drive folder.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

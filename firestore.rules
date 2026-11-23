@@ -1,0 +1,458 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isPrimaryAdmin() {
+      return isSignedIn() && request.auth.token.email == 'linhteteducation@gmail.com';
+    }
+
+    function isAdmin() {
+      return isPrimaryAdmin();
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isApprovedUser() {
+      return isAdmin() || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/userAccess/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/userAccess/$(request.auth.uid)).data.status == 'approved'
+      );
+    }
+
+    function isEmailApprovedInAllowlist(emailHash, userEmail) {
+      return isValidSha256(emailHash) &&
+        exists(/databases/$(database)/documents/allowedEmails/$(emailHash)) &&
+        get(/databases/$(database)/documents/allowedEmails/$(emailHash)).data.email == userEmail &&
+        get(/databases/$(database)/documents/allowedEmails/$(emailHash)).data.status == 'approved';
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidSha256(val) {
+      return val is string && val.size() == 64 && val.matches('^[a-f0-9]{64}$');
+    }
+
+    function isValidEmail(val) {
+      return val is string && val.size() >= 5 && val.size() <= 254 && val.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+    }
+
+    function isValidOptionalId(id) {
+      return id is string && id.size() <= 128 && (id.size() == 0 || id.matches('^[a-zA-Z0-9_\\-]+$'));
+    }
+
+    function isValidPdfKey(id) {
+      return id is string && id.size() >= 1 && id.size() <= 200 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidFileId(id) {
+      return id is string && id.size() >= 5 && id.size() <= 256 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidUniqueId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 256 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidHttpsOrEmpty(val) {
+      return val is string && val.size() <= 512 && (val.size() == 0 || val.matches('^https://.*'));
+    }
+
+    function isValidSettings(data, userId) {
+      return data.keys().hasAll([
+        'ownerId',
+        'targetFolderId',
+        'targetFolderName',
+        'targetFolderWebLink',
+        'namingRule',
+        'skipDuplicates',
+        'language',
+        'botUsername',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId',
+        'targetFolderId',
+        'targetFolderName',
+        'targetFolderWebLink',
+        'namingRule',
+        'skipDuplicates',
+        'language',
+        'botUsername',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      isValidId(data.ownerId) &&
+      data.ownerId == userId &&
+      data.ownerId == request.auth.uid &&
+      isValidOptionalId(data.targetFolderId) &&
+      data.targetFolderName is string && data.targetFolderName.size() <= 255 &&
+      isValidHttpsOrEmpty(data.targetFolderWebLink) &&
+      data.namingRule in ['original', 'date_prefix', 'chat_prefix'] &&
+      data.skipDuplicates is bool &&
+      data.language in ['my', 'en'] &&
+      data.botUsername is string && data.botUsername.size() <= 100 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidPdfRecord(data, userId, pdfKey) {
+      return data.keys().hasAll([
+        'ownerId',
+        'pdfKey',
+        'updateId',
+        'messageId',
+        'chatId',
+        'chatTitle',
+        'chatType',
+        'senderName',
+        'fileId',
+        'fileUniqueId',
+        'fileName',
+        'fileSize',
+        'mimeType',
+        'caption',
+        'postedAt',
+        'status',
+        'driveFileId',
+        'driveWebViewLink',
+        'uploadedFolderId',
+        'uploadedFolderName',
+        'uploadedAt',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId',
+        'pdfKey',
+        'updateId',
+        'messageId',
+        'chatId',
+        'chatTitle',
+        'chatType',
+        'senderName',
+        'fileId',
+        'fileUniqueId',
+        'fileName',
+        'fileSize',
+        'mimeType',
+        'caption',
+        'postedAt',
+        'status',
+        'driveFileId',
+        'driveWebViewLink',
+        'uploadedFolderId',
+        'uploadedFolderName',
+        'uploadedAt',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      isValidId(data.ownerId) &&
+      data.ownerId == userId &&
+      data.ownerId == request.auth.uid &&
+      isValidPdfKey(data.pdfKey) &&
+      data.pdfKey == pdfKey &&
+      data.updateId is number &&
+      data.messageId is number &&
+      data.chatId is number &&
+      data.chatTitle is string && data.chatTitle.size() >= 1 && data.chatTitle.size() <= 200 &&
+      data.chatType is string && data.chatType.size() >= 1 && data.chatType.size() <= 40 &&
+      data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 200 &&
+      isValidFileId(data.fileId) &&
+      isValidUniqueId(data.fileUniqueId) &&
+      data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 255 &&
+      data.fileSize is number && data.fileSize >= 0 &&
+      data.mimeType is string && data.mimeType.size() >= 1 && data.mimeType.size() <= 100 &&
+      data.caption is string && data.caption.size() <= 1000 &&
+      data.postedAt is string && data.postedAt.size() >= 1 && data.postedAt.size() <= 40 &&
+      data.status in ['pending', 'saved'] &&
+      isValidOptionalId(data.driveFileId) &&
+      isValidHttpsOrEmpty(data.driveWebViewLink) &&
+      isValidOptionalId(data.uploadedFolderId) &&
+      data.uploadedFolderName is string && data.uploadedFolderName.size() <= 255 &&
+      data.uploadedAt is string && data.uploadedAt.size() <= 40 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidActivity(data, userId) {
+      return data.keys().hasAll([
+        'ownerId',
+        'action',
+        'title',
+        'detail',
+        'status',
+        'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId',
+        'action',
+        'title',
+        'detail',
+        'status',
+        'createdAt'
+      ]) &&
+      isValidId(data.ownerId) &&
+      data.ownerId == userId &&
+      data.ownerId == request.auth.uid &&
+      data.action in ['sync', 'upload', 'download', 'folder_create', 'folder_delete', 'error'] &&
+      data.title is string && data.title.size() >= 1 && data.title.size() <= 255 &&
+      data.detail is string && data.detail.size() >= 1 && data.detail.size() <= 500 &&
+      data.status in ['success', 'warning', 'error'] &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidAllowedEmail(data, emailHash) {
+      return data.keys().hasAll([
+        'emailHash',
+        'email',
+        'status',
+        'note',
+        'addedByUid',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'emailHash',
+        'email',
+        'status',
+        'note',
+        'addedByUid',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      isValidSha256(data.emailHash) &&
+      data.emailHash == emailHash &&
+      isValidEmail(data.email) &&
+      data.status in ['approved', 'revoked'] &&
+      data.note is string && data.note.size() <= 200 &&
+      isValidId(data.addedByUid) &&
+      data.addedByUid == request.auth.uid &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidUserAccess(data, userId) {
+      return data.keys().hasAll([
+        'uid',
+        'email',
+        'emailHash',
+        'displayName',
+        'status',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'uid',
+        'email',
+        'emailHash',
+        'displayName',
+        'status',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      isValidId(data.uid) &&
+      data.uid == userId &&
+      isValidEmail(data.email) &&
+      isValidSha256(data.emailHash) &&
+      data.displayName is string && data.displayName.size() <= 120 &&
+      data.status in ['pending', 'approved', 'revoked'] &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    match /allowedEmails/{emailHash} {
+      allow get: if isAdmin() || (
+        isSignedIn() &&
+        isValidSha256(emailHash) &&
+        (resource == null || resource.data.email == request.auth.token.email)
+      );
+      allow list: if isPrimaryAdmin();
+      allow create: if isAdmin() &&
+        isValidSha256(emailHash) &&
+        isValidAllowedEmail(incoming(), emailHash) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidSha256(emailHash) &&
+        isValidAllowedEmail(incoming(), emailHash) &&
+        incoming().email == existing().email &&
+        incoming().emailHash == existing().emailHash &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'status',
+          'note',
+          'addedByUid',
+          'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidSha256(emailHash);
+    }
+
+    match /userAccess/{userId} {
+      allow get: if (isOwner(userId) || isAdmin()) && isValidId(userId);
+      allow list: if isPrimaryAdmin();
+      allow create: if isValidId(userId) &&
+        isValidUserAccess(incoming(), userId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time && (
+          isAdmin() || (
+            isOwner(userId) &&
+            incoming().email == request.auth.token.email && (
+              incoming().status == 'pending' ||
+              (
+                incoming().status == 'approved' &&
+                isEmailApprovedInAllowlist(incoming().emailHash, request.auth.token.email)
+              )
+            )
+          )
+        );
+      allow update: if isValidId(userId) &&
+        isValidUserAccess(incoming(), userId) &&
+        incoming().uid == existing().uid &&
+        incoming().email == existing().email &&
+        incoming().emailHash == existing().emailHash &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status',
+              'displayName',
+              'updatedAt'
+            ])
+          ) || (
+            isOwner(userId) &&
+            incoming().email == request.auth.token.email &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status',
+              'displayName',
+              'updatedAt'
+            ]) && (
+              incoming().status == existing().status || (
+                existing().status != 'revoked' &&
+                incoming().status == 'approved' &&
+                isEmailApprovedInAllowlist(existing().emailHash, request.auth.token.email)
+              )
+            )
+          )
+        );
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    match /users/{userId}/settings/{settingId} {
+      allow get: if isOwner(userId) && isApprovedUser() && isValidId(userId) && settingId == 'workspace';
+      allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+      allow create: if isOwner(userId) &&
+        isApprovedUser() &&
+        isValidId(userId) &&
+        settingId == 'workspace' &&
+        isValidSettings(incoming(), userId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isOwner(userId) &&
+        isApprovedUser() &&
+        isValidId(userId) &&
+        settingId == 'workspace' &&
+        isValidSettings(incoming(), userId) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'targetFolderId',
+          'targetFolderName',
+          'targetFolderWebLink',
+          'namingRule',
+          'skipDuplicates',
+          'language',
+          'botUsername',
+          'updatedAt'
+        ]);
+      allow delete: if isOwner(userId) && isApprovedUser() && isValidId(userId) && settingId == 'workspace';
+    }
+
+    match /users/{userId}/pdfs/{pdfKey} {
+      allow get: if isOwner(userId) && isApprovedUser() && isValidId(userId) && isValidPdfKey(pdfKey);
+      allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+      allow create: if isOwner(userId) &&
+        isApprovedUser() &&
+        isValidId(userId) &&
+        isValidPdfKey(pdfKey) &&
+        isValidPdfRecord(incoming(), userId, pdfKey) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isOwner(userId) &&
+        isApprovedUser() &&
+        isValidId(userId) &&
+        isValidPdfKey(pdfKey) &&
+        isValidPdfRecord(incoming(), userId, pdfKey) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().pdfKey == existing().pdfKey &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Action: Mark PDF as saved to a Google Drive folder
+          (
+            incoming().status == 'saved' &&
+            incoming().driveFileId.size() >= 3 &&
+            incoming().uploadedFolderId.size() >= 3 &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status',
+              'driveFileId',
+              'driveWebViewLink',
+              'uploadedFolderId',
+              'uploadedFolderName',
+              'uploadedAt',
+              'fileId',
+              'updatedAt'
+            ])
+          ) ||
+          // Action: Refresh Telegram message metadata
+          (
+            incoming().status == existing().status &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'fileId',
+              'fileName',
+              'caption',
+              'updateId',
+              'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isOwner(userId) && isApprovedUser() && isValidId(userId) && isValidPdfKey(pdfKey);
+    }
+
+    match /users/{userId}/activities/{activityId} {
+      allow get: if isOwner(userId) && isApprovedUser() && isValidId(userId) && isValidId(activityId);
+      allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+      allow create: if isOwner(userId) &&
+        isApprovedUser() &&
+        isValidId(userId) &&
+        isValidId(activityId) &&
+        isValidActivity(incoming(), userId) &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isOwner(userId) && isApprovedUser() && isValidId(userId) && isValidId(activityId);
+    }
+  }
+}
